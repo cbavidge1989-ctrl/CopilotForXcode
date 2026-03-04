@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List</title>
+    <script>
+        // Function to add a new task
+        function addTask() {
+            const taskInput = document.getElementById('taskInput');
+            const taskValue = taskInput.value;
+            if (taskValue) {
+                const tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+                tasks.push(taskValue);
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+                taskInput.value = '';
+                renderTasks();
+            }
+        }
+
+        // Function to render tasks from local storage
+        function renderTasks() {
+            const tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = '';
+            tasks.forEach((task, index) => {
+                const listItem = document.createElement('li');
+                listItem.textContent = task;
+                taskList.appendChild(listItem);
+            });
+        }
+
+        // Load tasks on page load
+        window.onload = renderTasks;
+    </script>
+</head>
+<body>
+    <h1>To-Do List</h1>
+    <input type="text" id="taskInput" placeholder="Add a new task" />
+    <button onclick="addTask()">Add Task</button>
+    <ul id="taskList"></ul>
+</body>
+</html>
