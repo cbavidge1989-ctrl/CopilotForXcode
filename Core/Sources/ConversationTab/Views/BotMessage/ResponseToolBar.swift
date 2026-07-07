@@ -14,11 +14,13 @@ struct ResponseToolBar: View {
             return nil
         }
         let rounded = (multiplier * 100).rounded() / 100
+        guard rounded != 0 else { return nil }
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 2
         formatter.numberStyle = .decimal
         let formattedMultiplier = formatter.string(from: NSNumber(value: rounded)) ?? "\(rounded)"
+        guard rounded != 0 else { return nil }
         return "\(formattedMultiplier)x"
     }
     
@@ -26,13 +28,21 @@ struct ResponseToolBar: View {
         guard let modelName = message.modelName else {
             return nil
         }
-        
+
         var text = modelName
-        
+
+        if let providerName = message.modelProviderName, !providerName.isEmpty {
+            text += " • \(providerName)"
+        }
+
+        if let effort = message.reasoningEffort, !effort.isEmpty, effort.lowercased() != "none" {
+            text += " • \(effort.capitalized)"
+        }
+
         if let billingMultiplier = billingMultiplier {
             text += " • \(billingMultiplier)"
         }
-        
+
         return text
     }
     

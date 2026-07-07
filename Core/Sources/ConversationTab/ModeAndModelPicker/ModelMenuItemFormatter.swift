@@ -9,7 +9,7 @@ public struct ScopeCache {
 
 // MARK: - Model Menu Item Formatting
 public struct ModelMenuItemFormatter {
-    public static let minimumPadding: Int = 48
+    public static let minimumPadding: Int = 24
 
     public static let attributes: [NSAttributedString.Key: NSFont] = [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
     
@@ -26,9 +26,18 @@ public struct ModelMenuItemFormatter {
         modelName: String,
         isSelected: Bool,
         multiplierText: String,
-        targetWidth: CGFloat? = nil
+        targetWidth: CGFloat? = nil,
+        isDegraded: Bool = false
     ) -> AttributedString {
-        let displayName = isSelected ? "✓ \(modelName)" : "    \(modelName)"
+        let prefix: String
+        if isDegraded {
+            prefix = "⚠ "
+        } else if isSelected {
+            prefix = "✓ "
+        } else {
+            prefix = "    "
+        }
+        let displayName = "\(prefix)\(modelName)"
 
         var fullString = displayName
         var attributedString = AttributedString(fullString)
@@ -64,24 +73,98 @@ public struct ModelMenuItemFormatter {
         return attributedString
     }
     
-    /// Gets the multiplier text for a model (e.g., "2x", "Included", provider name, or "Variable")
-    public static func getMultiplierText(for model: LLMModel) -> String {
+    /// Gets the trailing text for a model menu item.
+    /// - BYOK models: provider name
+    /// - Copilot models with token-based billing: "<context window> [· <thinking effort>] · <price category>"
+    /// - Copilot models without token-based billing: "<multiplier>x"
+    /// - Auto model: "Variable"
+    public static func getMultiplierText(for model: LLMModel, reasoningEffort: String? = nil) -> String {
+        if let providerName = model.providerName, !providerName.isEmpty {
+            return providerName
+        }
         if model.isAutoModel {
             return "Variable"
-        } else if let billing = model.billing {
-            let multiplier = billing.multiplier
-            if multiplier == 0 {
-                return "Included"
-            } else {
-                let numberPart = multiplier.truncatingRemainder(dividingBy: 1) == 0
-                    ? String(format: "%.0f", multiplier)
-                    : String(format: "%.2f", multiplier)
-                return "\(numberPart)x"
-            }
-        } else if let providerName = model.providerName, !providerName.isEmpty {
-            return providerName
-        } else {
-            return ""
         }
+        if model.billing?.tokenBasedBillingEnabled == true {
+            var parts: [String] = []
+            if let tokens = model.maxContextWindowTokens {
+                parts.append(formatContextWindow(tokens))
+            }
+            if let effort = reasoningEffort, !effort.isEmpty, effort.lowercased() != "none" {
+                parts.append(effort.capitalized)
+            }
+            if let category = model.modelPickerPriceCategory, !category.isEmpty {
+                parts.append(priceCategorySymbol(category))
+            }
+            return parts.joined(separator: " · ")
+        }
+        if let multiplier = model.billing?.multiplier {
+            return formatMultiplier(multiplier)
+        }
+        return ""
+    }
+
+    public static func priceCategorySymbol(_ category: String) -> String {
+        switch category.lowercased() {
+        case "low": return "$"
+        case "medium": return "$$"
+        case "high": return "$$$"
+        default: return "$$$$"
+        }
+    }
+
+    public static func formatContextWindow(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            let m = Double(count) / 1_000_000.0
+            return m.truncatingRemainder(dividingBy: 1) == 0
+                ? String(format: "%.0fM", m)
+                : String(format: "%.1fM", m)
+        }
+        if count >= 1_000 {
+            let k = Double(count) / 1_000.0
+            return k.truncatingRemainder(dividingBy: 1) == 0
+                ? String(format: "%.0fK", k)
+                : String(format: "%.1fK", k)
+        }
+        return "\(count)"
+    }
+
+    private static func formatMultiplier(_ multiplier: Float) -> String {
+        if multiplier == 0 { return "Included" }
+        return multiplier.truncatingRemainder(dividingBy: 1) == 0
+            ? String(format: "%.0fx", multiplier)
+            : String(format: "%.2fx", multiplier)
+    }
+
+    /// Draws the standard menu-item highlight background (accent-colored rounded rect).
+    static func drawMenuItemHighlight(
+        in frame: NSRect,
+        fontScale: Double,
+        hoverEdgeInset: CGFloat
+    ) {
+        NSGraphicsContext.saveGraphicsState()
+        NSColor.controlAccentColor.setFill()
+
+        let cornerRadius: CGFloat
+        if #available(macOS 26.0, *) {
+            cornerRadius = 8.0 * fontScale
+        } else {
+            cornerRadius = 4.0 * fontScale
+        }
+
+        let hoverWidth = frame.width - (hoverEdgeInset * 2)
+        let insetRect = NSRect(
+            x: hoverEdgeInset,
+            y: 0,
+            width: hoverWidth,
+            height: frame.height
+        )
+        let path = NSBezierPath(
+            roundedRect: insetRect,
+            xRadius: cornerRadius,
+            yRadius: cornerRadius
+        )
+        path.fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 }

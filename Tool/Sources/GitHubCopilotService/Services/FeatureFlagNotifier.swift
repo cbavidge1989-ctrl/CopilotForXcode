@@ -94,11 +94,10 @@ public class FeatureFlagNotifierImpl: FeatureFlagNotifier {
     }
     
     private func updateFeatureFlags() {
-        let xcodeChat = self.didChangeFeatureFlagsParams.envelope["xcode_chat"]?.boolValue != false
         let chatEnabled = self.didChangeFeatureFlagsParams.envelope["chat_enabled"]?.boolValue != false
         self.featureFlags.restrictedTelemetry = self.didChangeFeatureFlagsParams.token["rt"] != "0"
         self.featureFlags.snippy = self.didChangeFeatureFlagsParams.token["sn"] != "0"
-        self.featureFlags.chat = xcodeChat && chatEnabled
+        self.featureFlags.chat = chatEnabled
         self.featureFlags.inlineChat = chatEnabled
         self.featureFlags.agentMode = self.didChangeFeatureFlagsParams.token["agent_mode"] != "0"
         self.featureFlags.mcp = self.didChangeFeatureFlagsParams.token["mcp"] != "0"

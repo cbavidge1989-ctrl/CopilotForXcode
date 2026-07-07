@@ -5,6 +5,7 @@ import Status
 import SwiftUI
 import Cache
 import Client
+import Logger
 
 public struct SignInResponse {
     public let status: SignInInitiateStatus
@@ -30,6 +31,9 @@ public class GitHubCopilotViewModel: ObservableObject {
     @Published public var waitingForSignIn = false
     
     static var copilotAuthService: GitHubCopilotService?
+
+    private var lastQuotaCheckDate: Date?
+    private static let quotaCacheInterval: TimeInterval = 60 // seconds
     
     // Make init private to enforce singleton pattern
     private init() {}
@@ -362,5 +366,24 @@ public class GitHubCopilotViewModel: ObservableObject {
             name: .authStatusDidChange,
             object: nil
         )
+    }
+
+    /// Refreshes quota info only if the cache has expired (older than 60s).
+    public func refreshQuotaIfNeeded() {
+        if let lastCheck = lastQuotaCheckDate,
+           Date().timeIntervalSince(lastCheck) < Self.quotaCacheInterval {
+            return
+        }
+        Task {
+            do {
+                let service = try getGitHubCopilotAuthService()
+                let accountStatus = try await service.checkStatus()
+                guard accountStatus == .ok || accountStatus == .maybeOk else { return }
+                let _ = try await service.checkQuota()
+                lastQuotaCheckDate = Date()
+            } catch {
+                Logger.client.error("Failed to refresh quota: \(error)")
+            }
+        }
     }
 }

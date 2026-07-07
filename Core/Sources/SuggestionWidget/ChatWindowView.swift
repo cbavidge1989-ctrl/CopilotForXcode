@@ -232,17 +232,14 @@ struct ChatTitleBar: View {
 
 private extension View {
     func hideScrollIndicator() -> some View {
-        if #available(macOS 13.0, *) {
-            return scrollIndicators(.hidden)
-        } else {
-            return self
-        }
+        scrollIndicators(.hidden)
     }
 }
 
 struct ChatBar: View {
     let store: StoreOf<ChatPanelFeature>
     @Binding var isChatHistoryVisible: Bool
+    @ObservedObject private var statusObserver = StatusObserver.shared
 
     struct TabBarState: Equatable {
         var tabInfo: IdentifiedArray<String, ChatTabInfo>
@@ -257,6 +254,13 @@ struct ChatBar: View {
                 }
 
                 Spacer()
+
+                if statusObserver.quotaInfo != nil {
+                    QuotaButton(store: store)
+
+                    Divider()
+                        .scaledFrame(height: 16)
+                }
 
                 CreateButton(store: store)
 
@@ -389,6 +393,165 @@ struct ChatBar: View {
                 .buttonStyle(HoverButtonStyle())
                 .help("Open Settings")
                 .accessibilityLabel("Open Settings")
+            }
+        }
+    }
+
+    struct QuotaButton: View {
+        let store: StoreOf<ChatPanelFeature>
+        @ObservedObject private var statusObserver = StatusObserver.shared
+        @State private var isPopoverPresented = false
+        @State private var isButtonHovered = false
+        @State private var isPopoverHovered = false
+        @State private var dismissTask: DispatchWorkItem?
+
+        private var quotaInfo: GitHubCopilotQuotaInfo? {
+            statusObserver.quotaInfo
+        }
+
+        /// Static icon for unlimited business/enterprise; everyone else gets a dynamic pie chart.
+        private var usesStaticIcon: Bool {
+            guard let info = quotaInfo else { return true }
+            return info.isCBCEUnlimited
+        }
+
+        /// Free plan uses chat percentRemaining; other plans use premiumInteractions.
+        private var pieChartPercentRemaining: Float? {
+            guard let info = quotaInfo else { return nil }
+            if info.isFreeUser {
+                if let p = info.chat.percentRemaining { return p }
+                return info.chat.usedPercentage.map { 100.0 - $0 }
+            }
+            guard let snapshot = info.premiumInteractions else { return nil }
+            if let p = snapshot.percentRemaining { return p }
+            return snapshot.usedPercentage.map { 100.0 - $0 }
+        }
+
+        var body: some View {
+            WithPerceptionTracking {
+                Button(action: {}) {
+                    if usesStaticIcon {
+                        Image(systemName: "chart.pie")
+                            .scaledFont(.body)
+                    } else {
+                        PieChartIcon(
+                            percentRemaining: pieChartPercentRemaining ?? 100
+                        )
+                        .scaledFrame(width: 14, height: 14)
+                    }
+                }
+                .buttonStyle(HoverButtonStyle())
+                .accessibilityLabel("Copilot Usage")
+                .onHover { hovering in
+                    isButtonHovered = hovering
+                    handleHoverChange()
+                    if hovering {
+                        GitHubCopilotViewModel.shared.refreshQuotaIfNeeded()
+                    }
+                }
+                .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+                    QuotaPopoverView(
+                        quotaInfo: statusObserver.quotaInfo
+                    )
+                    .onHover { hovering in
+                        isPopoverHovered = hovering
+                        handleHoverChange()
+                    }
+                }
+            }
+        }
+
+        private func handleHoverChange() {
+            dismissTask?.cancel()
+            if isButtonHovered || isPopoverHovered {
+                isPopoverPresented = true
+                // Activate the app so buttons in the popover are interactive
+                // even when the chat panel wasn't focused before hovering
+                if !NSApp.isActive {
+                    if #available(macOS 14.0, *) {
+                        NSApp.activate()
+                    } else {
+                        NSApp.activate(ignoringOtherApps: false)
+                    }
+                }
+            } else {
+                let task = DispatchWorkItem { [self] in
+                    if !isButtonHovered && !isPopoverHovered {
+                        isPopoverPresented = false
+                    }
+                }
+                dismissTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: task)
+            }
+        }
+    }
+
+    /// A custom pie/donut chart icon that shows usage as a filled arc.
+    struct PieChartIcon: View {
+        let percentRemaining: Float
+
+        private var usedFraction: Double {
+            Double(min(max(100 - percentRemaining, 0), 100)) / 100.0
+        }
+
+        private var color: Color {
+            if percentRemaining <= 10 { return .red }
+            if percentRemaining <= 25 { return .yellow }
+            return .primary
+        }
+
+        var body: some View {
+            ZStack {
+                if percentRemaining <= 0 {
+                    DonutShape(outerRadius: 13, innerRadius: 2)
+                        .fill(color, style: FillStyle(eoFill: true))
+                } else {
+                    Circle()
+                        .strokeBorder(color, lineWidth: 1)
+                    PieSlice(fraction: usedFraction)
+                        .fill(color)
+                }
+            }
+        }
+
+        private struct DonutShape: Shape {
+            var outerRadius: CGFloat
+            var innerRadius: CGFloat
+
+            func path(in rect: CGRect) -> Path {
+                let center = CGPoint(x: rect.midX, y: rect.midY)
+                let maxRadius = min(rect.width, rect.height) / 2
+                let outer = min(outerRadius, maxRadius)
+                let inner = min(innerRadius, outer)
+                var path = Path()
+                path.addEllipse(in: CGRect(
+                    x: center.x - outer, y: center.y - outer,
+                    width: outer * 2, height: outer * 2
+                ))
+                path.addEllipse(in: CGRect(
+                    x: center.x - inner, y: center.y - inner,
+                    width: inner * 2, height: inner * 2
+                ))
+                return path
+            }
+        }
+
+        private struct PieSlice: Shape {
+            var fraction: Double
+
+            func path(in rect: CGRect) -> Path {
+                let center = CGPoint(x: rect.midX, y: rect.midY)
+                let radius = min(rect.width, rect.height) / 2
+                let startAngle = Angle.degrees(-90)
+                let endAngle = Angle.degrees(-90 + 360 * fraction)
+
+                var path = Path()
+                path.move(to: center)
+                path.addArc(center: center, radius: radius,
+                            startAngle: startAngle, endAngle: endAngle,
+                            clockwise: false)
+                path.closeSubpath()
+                return path
             }
         }
     }

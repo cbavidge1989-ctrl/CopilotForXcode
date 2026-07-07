@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.50.0 - May 20, 2026
+### Added
+- Reasoning effort control for supported models: Low, Medium, or High from the model picker to balance response speed and quality.
+- Added internal support for upcoming usage-based billing, including billing updates for the usage panel, usage notifications, and model picker. This will be visible to the user once usage-based billing rolls out.
+
+### Changed
+- Bring Your Own Key (BYOK) is now generally available.
+
+## 0.49.0 - May 15, 2026
+### Added
+- Native Anthropic Messages API (`/v1/messages`) endpoint support.
+- Thinking support in chat for reasoning-capable models.
+- Enhanced rate limit notifications and error messages.
+
+### Changed
+- Refined tool call item UI in agent progress: removed border and divider, repositioned chevron, and adjusted spacing for better readability.
+- Updated Copilot language server to 1.465.5.
+
+## 0.48.0 - April 23, 2026
+### Added
+- Context window usage details in chat, including a token breakdown for system instructions, messages, attached files, and tool results.
+- Auto Compress setting to compact conversation history and save context tokens.
+- Install flow for Xcode's built-in MCP server from settings.
+
+### Changed
+- Custom agents and the Auto model are now generally available.
+- Removed support for macOS 12.
+- Improved UI for model picker tooltips.
+
+### Fixed
+- Fixed an issue where GPT-5.4 requests could return a 400 error.
+- Fixed an issue where the MCP allowlist did not work correctly.
+
 ## 0.47.0 - February 4, 2026
 ### Added
 - Auto approval for MCP tools, sensitive files, and terminal commands.

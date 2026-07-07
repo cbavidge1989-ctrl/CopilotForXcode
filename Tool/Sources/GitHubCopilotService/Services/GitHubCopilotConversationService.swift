@@ -57,6 +57,7 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
                                                     references: request.references ?? [],
                                                     model: request.model,
                                                     modelProviderName: request.modelProviderName,
+                                                    reasoningEffort: request.reasoningEffort,
                                                     turns: request.turns,
                                                     agentMode: request.agentMode,
                                                     customChatModeId: request.customChatModeId,
@@ -79,6 +80,7 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
                                             references: request.references ?? [],
                                             model: request.model,
                                             modelProviderName: request.modelProviderName,
+                                            reasoningEffort: request.reasoningEffort,
                                             workspaceFolder: workspace.projectURL.absoluteString,
                                             workspaceFolders: getWorkspaceFolders(workspace: workspace),
                                             agentMode: request.agentMode,
@@ -116,9 +118,8 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
     
     public func modes(workspace: WorkspaceInfo) async throws -> [ConversationMode]? {
         guard let service = await serviceLocator.getService(from: workspace) else { return nil }
-        let isPreviewEnabled = FeatureFlagNotifierImpl.shared.featureFlags.editorPreviewFeatures
         let isCustomAgentEnabled = CopilotPolicyNotifierImpl.shared.copilotPolicy.customAgentEnabled
-        let workspaceFolders = isPreviewEnabled && isCustomAgentEnabled ? getWorkspaceFolders(
+        let workspaceFolders = isCustomAgentEnabled ? getWorkspaceFolders(
             workspace: workspace
         ) : nil
         return try await service.modes(workspaceFolders: workspaceFolders)
@@ -153,6 +154,14 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
                 changes: changes,
                 workspaceFolders: getWorkspaceFolders(workspace: workspace))
             )
+    }
+
+    public func generateThinkingTitle(
+        workspace: WorkspaceInfo,
+        params: GenerateThinkingTitleParams
+    ) async throws -> GenerateThinkingTitleResponse? {
+        guard let service = await serviceLocator.getService(from: workspace) else { return nil }
+        return try await service.generateThinkingTitle(params: params)
     }
 }
 

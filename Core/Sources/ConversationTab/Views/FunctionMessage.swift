@@ -24,21 +24,43 @@ struct FunctionMessage: View {
         text.contains("You've reached your quota limit for your BYOK model")
     }
 
+    private var isTBBMessage: Bool {
+        text.contains("AI Credits") || text.contains("additional overages")
+    }
+
     private var switchToFallbackModelText: String {
+        guard !isTBBMessage else { return "" }
         if let fallbackModelName = CopilotModelManager.getFallbackLLM(
             scope: chat.isAgentMode ? .agentPanel : .chatPanel
         )?.modelName {
             return "We have automatically switched you to \(fallbackModelName) which is included with your plan."
-        } else {
-            return ""
         }
+        return ""
+    }
+
+    private var quotaActionButtons: [(title: String, urlString: String, isProminent: Bool)] {
+        let lower = text.lowercased()
+        let hasEnableOverage = lower.contains("enable additional overages")
+        let hasIncreaseBudget = lower.contains("increase budget")
+        let hasOverage = hasEnableOverage || hasIncreaseBudget
+        var buttons: [(String, String, Bool)] = []
+        if hasEnableOverage {
+            buttons.append(("Enable Additional Overage", "https://aka.ms/github-copilot-manage-overage", true))
+        }
+        if hasIncreaseBudget {
+            buttons.append(("Increase Budget", "https://aka.ms/github-copilot-manage-overage", true))
+        }
+        if lower.contains("upgrade your plan") {
+            buttons.append(("Upgrade Plan", "https://aka.ms/github-copilot-upgrade-plan", !hasOverage))
+        }
+        return buttons
     }
 
     private var errorContent: Text {
         switch (isFreePlanUser, isOrgUser, isBYOKUser) {
         case (true, _, _):
             return Text("Monthly message limit reached. Upgrade to Copilot Pro (30-day free trial) or wait for your limit to reset.")
-            
+
         case (_, true, _):
             let parts = [
                 "You have exceeded your free request allowance.",
@@ -46,17 +68,11 @@ struct FunctionMessage: View {
                 "To enable additional paid premium requests, contact your organization admin."
             ].filter { !$0.isEmpty }
             return Text(attributedString(from: parts))
-            
+
         case (_, _, true):
             let sentences = splitBYOKQuotaMessage(text)
-            
             guard sentences.count == 2 else { fallthrough }
-
-            let parts = [
-                sentences[0],
-                switchToFallbackModelText,
-                sentences[1]
-            ].filter { !$0.isEmpty }
+            let parts = [sentences[0], switchToFallbackModelText, sentences[1]].filter { !$0.isEmpty }
             return Text(attributedString(from: parts))
 
         default:
@@ -91,7 +107,7 @@ struct FunctionMessage: View {
     var body: some View {
         NotificationBanner(style: .warning) {
             errorContent
-            
+
             if isFreePlanUser {
                 Button("Update to Copilot Pro") {
                     if let url = URL(string: "https://aka.ms/github-copilot-upgrade-plan") {
@@ -106,6 +122,27 @@ struct FunctionMessage: View {
                         NSCursor.pointingHand.push()
                     } else {
                         NSCursor.pop()
+                    }
+                }
+            }
+
+            if !quotaActionButtons.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(quotaActionButtons, id: \.title) { button in
+                        Group {
+                            if button.isProminent {
+                                Button(button.title) {
+                                    if let url = URL(string: button.urlString) { openURL(url) }
+                                }.buttonStyle(.borderedProminent)
+                            } else {
+                                Button(button.title) {
+                                    if let url = URL(string: button.urlString) { openURL(url) }
+                                }.buttonStyle(.bordered)
+                            }
+                        }
+                        .controlSize(.regular)
+                        .scaledFont(.body)
+                        .onHover { if $0 { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
                     }
                 }
             }

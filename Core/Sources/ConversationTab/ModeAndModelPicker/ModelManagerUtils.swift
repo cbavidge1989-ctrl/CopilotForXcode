@@ -7,9 +7,11 @@ import ConversationServiceProvider
 public let SELECTED_LLM_KEY = "selectedLLM"
 public let SELECTED_CHATMODE_KEY = "selectedChatMode"
 public let SELECTED_AGENT_SUBMODE_KEY = "selectedAgentSubMode"
+public let SELECTED_REASONING_EFFORT_KEY = "selectedReasoningEffort"
 
 public extension Notification.Name {
     static let gitHubCopilotSelectedModelDidChange = Notification.Name("com.github.CopilotForXcode.SelectedModelDidChange")
+    static let gitHubCopilotSelectedReasoningEffortDidChange = Notification.Name("com.github.CopilotForXcode.SelectedReasoningEffortDidChange")
 }
 
 public extension AppState {
@@ -34,7 +36,13 @@ public extension AppState {
         let displayName = savedModel["displayName"]?.stringValue
         let providerName = savedModel["providerName"]?.stringValue
         let supportVision = savedModel["supportVision"]?.boolValue ?? false
-        
+        let degradationReason = savedModel["degradationReason"]?.stringValue
+        let supportsReasoningEffortLevel = savedModel["supportsReasoningEffortLevel"]?.boolValue ?? false
+        var reasoningEfforts: [String]? = nil
+        if case .array(let arr)? = savedModel["reasoningEfforts"] {
+            reasoningEfforts = arr.compactMap { $0.stringValue }
+        }
+
         // Try to reconstruct billing info if available
         var billing: CopilotModelBilling?
         if let isPremium = savedModel["billing"]?["isPremium"]?.boolValue,
@@ -44,7 +52,7 @@ public extension AppState {
                 multiplier: Float(multiplier)
             )
         }
-        
+
         return LLMModel(
             displayName: displayName,
             modelName: modelName,
@@ -52,7 +60,10 @@ public extension AppState {
             id: id,
             billing: billing,
             providerName: providerName,
-            supportVision: supportVision
+            supportVision: supportVision,
+            degradationReason: degradationReason,
+            reasoningEfforts: reasoningEfforts,
+            supportsReasoningEffortLevel: supportsReasoningEffortLevel
         )
     }
 
@@ -61,6 +72,41 @@ public extension AppState {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .gitHubCopilotSelectedModelDidChange, object: nil)
         }
+    }
+
+    func getSelectedReasoningEffort(for model: LLMModel) -> String? {
+        guard let saved = get(key: SELECTED_REASONING_EFFORT_KEY) else { return nil }
+        return saved[model.reasoningEffortStorageKey]?.stringValue
+    }
+
+    func setSelectedReasoningEffort(_ effort: String, for model: LLMModel) {
+        var efforts: [String: String] = [:]
+        if let existing = get(key: SELECTED_REASONING_EFFORT_KEY),
+           case .hash(let dict) = existing {
+            for (k, v) in dict {
+                if let s = v.stringValue { efforts[k] = s }
+            }
+        }
+        efforts[model.reasoningEffortStorageKey] = effort
+        update(key: SELECTED_REASONING_EFFORT_KEY, value: efforts)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .gitHubCopilotSelectedReasoningEffortDidChange, object: nil)
+        }
+    }
+
+    /// Returns the effective reasoning effort for a given model:
+    /// - `nil` if the model does not support reasoning effort
+    /// - `nil` for the auto model — lets the server pick the effort for whichever model it routes to
+    /// - the user-persisted value if set
+    /// - otherwise the model-family default: "medium" for all models
+    func effectiveReasoningEffort(for model: LLMModel) -> String? {
+        guard model.supportsReasoningEffortLevel else { return nil }
+        guard !model.isAutoModel else { return nil }
+        let candidate = getSelectedReasoningEffort(for: model) ?? model.defaultReasoningEffort
+        if let efforts = model.reasoningEfforts, !efforts.isEmpty {
+            return efforts.contains(candidate) ? candidate : efforts.first
+        }
+        return candidate
     }
 
     func modelScope() -> PromptTemplateScope {
@@ -148,15 +194,7 @@ public class CopilotModelManagerObservable: ObservableObject {
                     scope: AppState.shared
                         .isAgentModeEnabled() ? .agentPanel : .chatPanel
                 ) {
-                    AppState.shared.setSelectedModel(
-                        .init(
-                            modelName: fallbackModel.modelName,
-                            modelFamily: fallbackModel.modelFamily,
-                            id: fallbackModel.id,
-                            billing: fallbackModel.billing,
-                            supportVision: fallbackModel.capabilities.supports.vision
-                        )
-                    )
+                    AppState.shared.setSelectedModel(fallbackModel.toLLMModel())
                 }
             }
             .store(in: &cancellables)
@@ -170,52 +208,28 @@ public extension CopilotModelManager {
         return LLMs.filter(
             { $0.scopes.contains(scope) }
         ).map {
-            return LLMModel(
-                modelName: $0.modelName,
-                modelFamily: $0.isChatFallback ? $0.id : $0.modelFamily,
-                id: $0.id,
-                billing: $0.billing,
-                supportVision: $0.capabilities.supports.vision
-            )
+            $0.toLLMModel(familyOverride: $0.isChatFallback ? $0.id : nil)
         }
     }
 
     static func getDefaultChatModel(scope: PromptTemplateScope = .chatPanel) -> LLMModel? {
         let LLMs = CopilotModelManager.getAvailableLLMs()
         let LLMsInScope = LLMs.filter({ $0.scopes.contains(scope) })
-        let defaultModel = LLMsInScope.first(where: { $0.isChatDefault && !$0.isAutoModel })
+        let defaultModel = LLMsInScope.first(where: { $0.isChatDefault && $0.isAutoModel })
+            ?? LLMsInScope.first(where: { $0.isChatDefault })
         // If a default model is found, return it
         if let defaultModel = defaultModel {
-            return LLMModel(
-                modelName: defaultModel.modelName,
-                modelFamily: defaultModel.modelFamily,
-                id: defaultModel.id,
-                billing: defaultModel.billing,
-                supportVision: defaultModel.capabilities.supports.vision
-            )
+            return defaultModel.toLLMModel()
         }
 
         // Fallback to gpt-4.1 if available
-        let gpt4_1 = LLMsInScope.first(where: { $0.modelFamily == "gpt-4.1" })
-        if let gpt4_1 = gpt4_1 {
-            return LLMModel(
-                modelName: gpt4_1.modelName,
-                modelFamily: gpt4_1.modelFamily,
-                id: gpt4_1.id,
-                billing: gpt4_1.billing,
-                supportVision: gpt4_1.capabilities.supports.vision
-            )
+        if let gpt4_1 = LLMsInScope.first(where: { $0.modelFamily == "gpt-4.1" }) {
+            return gpt4_1.toLLMModel()
         }
 
         // If no default model is found, fallback to the first available model
-        if let firstModel = LLMsInScope.first(where: { !$0.isAutoModel }) {
-            return LLMModel(
-                modelName: firstModel.modelName,
-                modelFamily: firstModel.modelFamily,
-                id: firstModel.id,
-                billing: firstModel.billing,
-                supportVision: firstModel.capabilities.supports.vision
-            )
+        if let firstModel = LLMsInScope.first {
+            return firstModel.toLLMModel()
         }
 
         return nil
@@ -239,7 +253,9 @@ public extension BYOKModelManager {
                 id: $0.modelId,
                 billing: nil,
                 providerName: $0.providerName.rawValue,
-                supportVision: $0.modelCapabilities?.vision ?? false
+                supportVision: $0.modelCapabilities?.vision ?? false,
+                maxInputTokens: $0.modelCapabilities?.maxInputTokens,
+                maxOutputTokens: $0.modelCapabilities?.maxOutputTokens
             )
         }
     }
@@ -250,26 +266,76 @@ public struct LLMModel: Codable, Hashable, Equatable {
     public let modelName: String
     public let modelFamily: String
     public let id: String
+    public let vendor: String?
     public let billing: CopilotModelBilling?
     public let providerName: String?
     public let supportVision: Bool
-    
+    public let degradationReason: String?
+    public let maxInputTokens: Int?
+    public let maxOutputTokens: Int?
+    public let maxContextWindowTokens: Int?
+    public let modelPickerCategory: String?
+    public let modelPickerPriceCategory: String?
+    public let reasoningEfforts: [String]?
+    public let supportsReasoningEffortLevel: Bool
+
     public init(
         displayName: String? = nil,
         modelName: String,
         modelFamily: String,
         id: String,
-        billing: CopilotModelBilling?,
+        vendor: String? = nil,
+        billing: CopilotModelBilling? = nil,
         providerName: String? = nil,
-        supportVision: Bool
+        supportVision: Bool,
+        degradationReason: String? = nil,
+        maxInputTokens: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        maxContextWindowTokens: Int? = nil,
+        modelPickerCategory: String? = nil,
+        modelPickerPriceCategory: String? = nil,
+        reasoningEfforts: [String]? = nil,
+        supportsReasoningEffortLevel: Bool = false
     ) {
         self.displayName = displayName
         self.modelName = modelName
         self.modelFamily = modelFamily
         self.id = id
+        self.vendor = vendor
         self.billing = billing
         self.providerName = providerName
         self.supportVision = supportVision
+        self.degradationReason = degradationReason
+        self.maxInputTokens = maxInputTokens
+        self.maxOutputTokens = maxOutputTokens
+        self.maxContextWindowTokens = maxContextWindowTokens
+        self.modelPickerCategory = modelPickerCategory
+        self.modelPickerPriceCategory = modelPickerPriceCategory
+        self.reasoningEfforts = reasoningEfforts
+        self.supportsReasoningEffortLevel = supportsReasoningEffortLevel
+    }
+
+    // Only compare model identity fields; exclude transient/display-only data
+    // (billing, degradationReason, vendor, token limits) so that a persisted
+    // model still matches a freshly-fetched one.
+    public static func == (lhs: LLMModel, rhs: LLMModel) -> Bool {
+        lhs.displayName == rhs.displayName &&
+            lhs.modelName == rhs.modelName &&
+            lhs.modelFamily == rhs.modelFamily &&
+            lhs.id == rhs.id &&
+            lhs.providerName == rhs.providerName &&
+            lhs.supportVision == rhs.supportVision
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(displayName)
+        hasher.combine(modelName)
+        hasher.combine(modelFamily)
+        hasher.combine(id)
+        hasher.combine(providerName)
+        hasher.combine(supportVision)
+        hasher.combine(maxContextWindowTokens)
+        hasher.combine(modelPickerPriceCategory)
     }
 }
 
@@ -280,8 +346,35 @@ public extension LLMModel {
     var isStandardModel: Bool { !isPremiumModel || billing == nil }
     /// Apply to `Copilot Models`
     var isAutoModel: Bool { isStandardModel && modelName == "Auto" }
+
+    var reasoningEffortStorageKey: String {
+        "\(id)_\(providerName ?? "")"
+    }
+
+    var defaultReasoningEffort: String {
+        "medium"
+    }
 }
 
 extension CopilotModel {
     var isAutoModel: Bool { modelName == "Auto" }
+
+    func toLLMModel(familyOverride: String? = nil) -> LLMModel {
+        LLMModel(
+            modelName: modelName,
+            modelFamily: familyOverride ?? modelFamily,
+            id: id,
+            vendor: vendor,
+            billing: billing,
+            supportVision: capabilities.supports.vision,
+            degradationReason: degradationReason,
+            maxInputTokens: capabilities.limits?.maxInputTokens,
+            maxOutputTokens: capabilities.limits?.maxOutputTokens,
+            maxContextWindowTokens: capabilities.limits?.maxContextWindowTokens,
+            modelPickerCategory: modelPickerCategory,
+            modelPickerPriceCategory: modelPickerPriceCategory,
+            reasoningEfforts: capabilities.supports.reasoningEfforts,
+            supportsReasoningEffortLevel: capabilities.supports.supportsReasoningEffortLevel ?? false
+        )
+    }
 }

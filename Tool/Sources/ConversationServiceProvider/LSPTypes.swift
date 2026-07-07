@@ -24,6 +24,7 @@ public enum PromptTemplateScope: String, Codable, Equatable {
     case agentPanel = "agent-panel"
     case editor = "editor"
     case inline = "inline"
+    case inlineAgent = "inline-agent"
     case completion = "completion"
 }
 
@@ -39,6 +40,7 @@ public struct CopilotModel: Codable, Equatable {
     public let modelFamily: String
     public let modelName: String
     public let id: String
+    public let vendor: String?
     public let modelPolicy: CopilotModelPolicy?
     public let scopes: [PromptTemplateScope]
     public let preview: Bool
@@ -46,6 +48,9 @@ public struct CopilotModel: Codable, Equatable {
     public let isChatFallback: Bool
     public let capabilities: CopilotModelCapabilities
     public let billing: CopilotModelBilling?
+    public let degradationReason: String?
+    public let modelPickerCategory: String?
+    public let modelPickerPriceCategory: String?
 }
 
 public struct CopilotModelPolicy: Codable, Equatable {
@@ -55,20 +60,41 @@ public struct CopilotModelPolicy: Codable, Equatable {
 
 public struct CopilotModelCapabilities: Codable, Equatable {
     public let supports: CopilotModelCapabilitiesSupports
+    public let limits: CopilotModelCapabilitiesLimits?
+}
+
+public struct CopilotModelCapabilitiesLimits: Codable, Equatable {
+    public let maxContextWindowTokens: Int?
+    public let maxOutputTokens: Int?
+    public let maxInputTokens: Int?
+    public let maxNonStreamingOutputTokens: Int?
 }
 
 public struct CopilotModelCapabilitiesSupports: Codable, Equatable {
     public let vision: Bool
+    public let reasoningEfforts: [String]?
+    public let supportsReasoningEffortLevel: Bool?
 }
 
 public struct CopilotModelBilling: Codable, Equatable, Hashable {
     public let isPremium: Bool
     public let multiplier: Float
-    
-    public init(isPremium: Bool, multiplier: Float) {
+    public let tokenBasedBillingEnabled: Bool?
+    public let tokenPrices: CopilotModelBillingTokenPrices?
+
+    public init(isPremium: Bool, multiplier: Float, tokenBasedBillingEnabled: Bool? = nil, tokenPrices: CopilotModelBillingTokenPrices? = nil) {
         self.isPremium = isPremium
         self.multiplier = multiplier
+        self.tokenBasedBillingEnabled = tokenBasedBillingEnabled
+        self.tokenPrices = tokenPrices
     }
+}
+
+public struct CopilotModelBillingTokenPrices: Codable, Equatable, Hashable {
+    public let cachePrice: Float?
+    public let inputPrice: Float?
+    public let outputPrice: Float?
+    public let tokenUnit: Int?
 }
 
 // MARK: ChatModes
@@ -76,6 +102,7 @@ public enum ChatMode: String, Codable {
     case Ask = "Ask"
     case Edit = "Edit"
     case Agent = "Agent"
+    case InlineAgent = "InlineAgent"
 }
 
 public struct ConversationMode: Codable, Equatable {
@@ -512,6 +539,20 @@ public struct ActionCommand: Codable, Equatable, Hashable {
 
 // MARK: - Copilot Code Review
 
+public struct GenerateThinkingTitleParams: Codable {
+    public var thinkingContent: String?
+    public var extractedTitles: [String]?
+
+    public init(thinkingContent: String? = nil, extractedTitles: [String]? = nil) {
+        self.thinkingContent = thinkingContent
+        self.extractedTitles = extractedTitles
+    }
+}
+
+public struct GenerateThinkingTitleResponse: Codable {
+    public var title: String
+}
+
 public struct ReviewChangesParams: Codable, Equatable {
     public struct Change: Codable, Equatable {
         public let uri: DocumentUri
@@ -539,8 +580,8 @@ public struct ReviewChangesParams: Codable, Equatable {
 }
 
 public struct ReviewComment: Codable, Equatable, Hashable {
-    // Self-defined `id` for using in comment operation. Add an init value to bypass decoding
-    public let id: String = UUID().uuidString
+    // Self-defined `id` for using in comment operation. Generated when missing from payload.
+    public let id: String
     public let uri: DocumentUri
     public let range: LSPRange
     public let message: String
@@ -549,7 +590,7 @@ public struct ReviewComment: Codable, Equatable, Hashable {
     // enum: low, medium, high
     public let severity: String
     public let suggestion: String?
-    
+
     public init(
         uri: DocumentUri,
         range: LSPRange,
@@ -558,12 +599,28 @@ public struct ReviewComment: Codable, Equatable, Hashable {
         severity: String,
         suggestion: String?
     ) {
+        self.id = UUID().uuidString
         self.uri = uri
         self.range = range
         self.message = message
         self.kind = kind
         self.severity = severity
         self.suggestion = suggestion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, uri, range, message, kind, severity, suggestion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.uri = try container.decode(DocumentUri.self, forKey: .uri)
+        self.range = try container.decode(LSPRange.self, forKey: .range)
+        self.message = try container.decode(String.self, forKey: .message)
+        self.kind = try container.decode(String.self, forKey: .kind)
+        self.severity = try container.decode(String.self, forKey: .severity)
+        self.suggestion = try container.decodeIfPresent(String.self, forKey: .suggestion)
     }
 }
 
@@ -654,6 +711,18 @@ public enum Reference: Codable, Equatable, Hashable {
     }
 }
 
+public struct ConversationModelInfo: Codable {
+    public let id: String?
+    public let providerName: String?
+    public let reasoningEffort: String?
+
+    public init(id: String?, providerName: String?, reasoningEffort: String?) {
+        self.id = id
+        self.providerName = providerName
+        self.reasoningEffort = reasoningEffort
+    }
+}
+
 public struct ConversationCreateResponse: Codable {
     public let conversationId: String
     public let turnId: String
@@ -661,6 +730,7 @@ public struct ConversationCreateResponse: Codable {
     public let modelName: String?
     public let modelProviderName: String?
     public let billingMultiplier: Float?
+    public let modelInfo: ConversationModelInfo?
 }
 
 public struct ConversationCreateParams: Codable {
@@ -676,11 +746,12 @@ public struct ConversationCreateParams: Codable {
     public var ignoredSkills: [String]?
     public var model: String?
     public var modelProviderName: String?
+    public var modelInfo: ConversationModelInfo?
     public var chatMode: String?
     public var customChatModeId: String?
     public var needToolCallConfirmation: Bool?
     public var userLanguage: String?
-    
+
     public struct Capabilities: Codable {
         public var skills: [String]
         public var allSkills: Bool?
@@ -704,6 +775,7 @@ public struct ConversationCreateParams: Codable {
         ignoredSkills: [String]? = nil,
         model: String? = nil,
         modelProviderName: String? = nil,
+        modelInfo: ConversationModelInfo? = nil,
         chatMode: String? = nil,
         customChatModeId: String? = nil,
         needToolCallConfirmation: Bool? = nil,
@@ -721,6 +793,7 @@ public struct ConversationCreateParams: Codable {
         self.ignoredSkills = ignoredSkills
         self.model = model
         self.modelProviderName = modelProviderName
+        self.modelInfo = modelInfo
         self.chatMode = chatMode
         self.customChatModeId = customChatModeId
         self.needToolCallConfirmation = needToolCallConfirmation

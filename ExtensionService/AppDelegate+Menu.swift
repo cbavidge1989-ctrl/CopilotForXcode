@@ -111,23 +111,13 @@ extension AppDelegate {
         
         quotaItem = NSMenuItem()
         quotaItem.view = QuotaView(
-            chat: .init(
-                percentRemaining: 0,
-                unlimited: false,
-                overagePermitted: false
-            ),
-            completions: .init(
-                percentRemaining: 0,
-                unlimited: false,
-                overagePermitted: false
-            ),
-            premiumInteractions: .init(
-                percentRemaining: 0,
-                unlimited: false,
-                overagePermitted: false
-            ),
-            resetDate: "",
-            copilotPlan: ""
+            quotaInfo: GitHubCopilotQuotaInfo(
+                chat: .init(unlimited: false, overagePermitted: false),
+                completions: .init(unlimited: false, overagePermitted: false),
+                premiumInteractions: .init(unlimited: false, overagePermitted: false),
+                resetDate: "",
+                copilotPlan: ""
+            )
         )
         quotaItem.isHidden = true
 

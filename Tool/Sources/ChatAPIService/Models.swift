@@ -158,7 +158,9 @@ public struct ChatMessage: Equatable, Codable {
     
     /// The steps of conversation progress
     public var steps: [ConversationProgressStep]
-    
+
+    public var thinking: [MessageThinking]
+
     public var editAgentRounds: [AgentRound]
     
     public var parentTurnId: String?
@@ -178,7 +180,9 @@ public struct ChatMessage: Equatable, Codable {
     
     // The model name used for the turn.
     public var modelName: String?
+    public var modelProviderName: String?
     public var billingMultiplier: Float?
+    public var reasoningEffort: String?
     
     /// The timestamp of the message.
     public var createdAt: Date
@@ -198,6 +202,7 @@ public struct ChatMessage: Equatable, Codable {
         rating: ConversationRating = .unrated,
         steps: [ConversationProgressStep] = [],
         editAgentRounds: [AgentRound] = [],
+        thinking: [MessageThinking] = [],
         parentTurnId: String? = nil,
         panelMessages: [CopilotShowMessageParams] = [],
         codeReviewRound: CodeReviewRound? = nil,
@@ -205,7 +210,9 @@ public struct ChatMessage: Equatable, Codable {
         turnStatus: TurnStatus? = nil,
         requestType: RequestType = .conversation,
         modelName: String? = nil,
+        modelProviderName: String? = nil,
         billingMultiplier: Float? = nil,
+        reasoningEffort: String? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -221,6 +228,7 @@ public struct ChatMessage: Equatable, Codable {
         self.errorMessages = errorMessages
         self.rating = rating
         self.steps = steps
+        self.thinking = thinking
         self.editAgentRounds = editAgentRounds
         self.parentTurnId = parentTurnId
         self.panelMessages = panelMessages
@@ -229,7 +237,9 @@ public struct ChatMessage: Equatable, Codable {
         self.turnStatus = turnStatus
         self.requestType = requestType
         self.modelName = modelName
+        self.modelProviderName = modelProviderName
         self.billingMultiplier = billingMultiplier
+        self.reasoningEffort = reasoningEffort
 
         let now = Date.now
         self.createdAt = createdAt ?? now
@@ -264,13 +274,16 @@ public struct ChatMessage: Equatable, Codable {
         suggestedTitle: String? = nil,
         steps: [ConversationProgressStep] = [],
         editAgentRounds: [AgentRound] = [],
+        thinking: [MessageThinking] = [],
         parentTurnId: String? = nil,
         codeReviewRound: CodeReviewRound? = nil,
         fileEdits: [FileEdit] = [],
         turnStatus: TurnStatus? = nil,
         requestType: RequestType = .conversation,
         modelName: String? = nil,
-        billingMultiplier: Float? = nil
+        modelProviderName: String? = nil,
+        billingMultiplier: Float? = nil,
+        reasoningEffort: String? = nil
     ) {
         self.init(
             id: id,
@@ -283,13 +296,16 @@ public struct ChatMessage: Equatable, Codable {
             suggestedTitle: suggestedTitle,
             steps: steps,
             editAgentRounds: editAgentRounds,
+            thinking: thinking,
             parentTurnId: parentTurnId,
             codeReviewRound: codeReviewRound,
             fileEdits: fileEdits,
             turnStatus: turnStatus,
             requestType: requestType,
             modelName: modelName,
-            billingMultiplier: billingMultiplier
+            modelProviderName: modelProviderName,
+            billingMultiplier: billingMultiplier,
+            reasoningEffort: reasoningEffort
         )
     }
     

@@ -15,6 +15,7 @@ extension ChatMessage {
         var suggestedTitle: String?
         var errorMessages: [String] = []
         var steps: [ConversationProgressStep]
+        var thinking: [MessageThinking]
         var editAgentRounds: [AgentRound]
         var parentTurnId: String?
         var panelMessages: [CopilotShowMessageParams]
@@ -22,7 +23,9 @@ extension ChatMessage {
         var turnStatus: ChatMessage.TurnStatus?
         let requestType: RequestType
         var modelName: String?
+        var modelProviderName: String?
         var billingMultiplier: Float?
+        var reasoningEffort: String?
 
         // Custom decoder to provide default value for steps
         init(from decoder: Decoder) throws {
@@ -35,6 +38,14 @@ extension ChatMessage {
             suggestedTitle = try container.decodeIfPresent(String.self, forKey: .suggestedTitle)
             errorMessages = try container.decodeIfPresent([String].self, forKey: .errorMessages) ?? []
             steps = try container.decodeIfPresent([ConversationProgressStep].self, forKey: .steps) ?? []
+            // Decode thinking as either an array (current format) or a single value (legacy format).
+            if let array = try? container.decodeIfPresent([MessageThinking].self, forKey: .thinking) {
+                thinking = array
+            } else if let single = try? container.decodeIfPresent(MessageThinking.self, forKey: .thinking) {
+                thinking = [single]
+            } else {
+                thinking = []
+            }
             editAgentRounds = try container.decodeIfPresent([AgentRound].self, forKey: .editAgentRounds) ?? []
             parentTurnId = try container.decodeIfPresent(String.self, forKey: .parentTurnId)
             panelMessages = try container.decodeIfPresent([CopilotShowMessageParams].self, forKey: .panelMessages) ?? []
@@ -42,7 +53,9 @@ extension ChatMessage {
             turnStatus = try container.decodeIfPresent(ChatMessage.TurnStatus.self, forKey: .turnStatus)
             requestType = try container.decodeIfPresent(RequestType.self, forKey: .requestType) ?? .conversation
             modelName = try container.decodeIfPresent(String.self, forKey: .modelName)
+            modelProviderName = try container.decodeIfPresent(String.self, forKey: .modelProviderName)
             billingMultiplier = try container.decodeIfPresent(Float.self, forKey: .billingMultiplier)
+            reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
         }
 
         // Default memberwise init for encoding
@@ -55,6 +68,7 @@ extension ChatMessage {
             suggestedTitle: String?,
             errorMessages: [String] = [],
             steps: [ConversationProgressStep]?,
+            thinking: [MessageThinking] = [],
             editAgentRounds: [AgentRound]? = nil,
             parentTurnId: String? = nil,
             panelMessages: [CopilotShowMessageParams]? = nil,
@@ -62,7 +76,9 @@ extension ChatMessage {
             turnStatus: ChatMessage.TurnStatus? = nil,
             requestType: RequestType = .conversation,
             modelName: String? = nil,
-            billingMultiplier: Float? = nil
+            modelProviderName: String? = nil,
+            billingMultiplier: Float? = nil,
+            reasoningEffort: String? = nil
         ) {
             self.content = content
             self.contentImageReferences = contentImageReferences ?? []
@@ -72,6 +88,7 @@ extension ChatMessage {
             self.suggestedTitle = suggestedTitle
             self.errorMessages = errorMessages
             self.steps = steps ?? []
+            self.thinking = thinking
             self.editAgentRounds = editAgentRounds ?? []
             self.parentTurnId = parentTurnId
             self.panelMessages = panelMessages ?? []
@@ -79,7 +96,9 @@ extension ChatMessage {
             self.turnStatus = turnStatus
             self.requestType = requestType
             self.modelName = modelName
+            self.modelProviderName = modelProviderName
             self.billingMultiplier = billingMultiplier
+            self.reasoningEffort = reasoningEffort
         }
     }
     
@@ -93,6 +112,7 @@ extension ChatMessage {
             suggestedTitle: self.suggestedTitle,
             errorMessages: self.errorMessages,
             steps: self.steps,
+            thinking: self.thinking,
             editAgentRounds: self.editAgentRounds,
             parentTurnId: self.parentTurnId,
             panelMessages: self.panelMessages,
@@ -100,7 +120,9 @@ extension ChatMessage {
             turnStatus: self.turnStatus,
             requestType: self.requestType,
             modelName: self.modelName,
-            billingMultiplier: self.billingMultiplier
+            modelProviderName: self.modelProviderName,
+            billingMultiplier: self.billingMultiplier,
+            reasoningEffort: self.reasoningEffort
         )
         
         // TODO: handle exception
@@ -133,13 +155,16 @@ extension ChatMessage {
                     rating: turnItemData.rating,
                     steps: turnItemData.steps,
                     editAgentRounds: turnItemData.editAgentRounds,
+                    thinking: turnItemData.thinking,
                     parentTurnId: turnItemData.parentTurnId,
                     panelMessages: turnItemData.panelMessages,
                     fileEdits: turnItemData.fileEdits,
                     turnStatus: turnItemData.turnStatus,
                     requestType: turnItemData.requestType,
                     modelName: turnItemData.modelName,
+                    modelProviderName: turnItemData.modelProviderName,
                     billingMultiplier: turnItemData.billingMultiplier,
+                    reasoningEffort: turnItemData.reasoningEffort,
                     createdAt: turnItem.createdAt,
                     updatedAt: turnItem.updatedAt
                 )
